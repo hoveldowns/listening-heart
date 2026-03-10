@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Listening Heart — Task Notes</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: monospace; background: #0d0d0d; color: #e0e0e0; max-width: 720px; margin: 0 auto; padding: 24px 16px; }
+    h1 { font-size: 1.1rem; color: #fff; margin-bottom: 4px; }
+    .subtitle { font-size: 0.8rem; color: #555; margin-bottom: 24px; }
+    .task-input { display: flex; gap: 8px; margin-bottom: 24px; }
+    input, textarea, select { background: #1a1a1a; border: 1px solid #333; color: #e0e0e0; padding: 8px 10px; font-family: monospace; font-size: 0.85rem; border-radius: 4px; }
+    input { flex: 1; }
+    button { background: #2a2a2a; border: 1px solid #444; color: #e0e0e0; padding: 8px 14px; font-family: monospace; font-size: 0.85rem; cursor: pointer; border-radius: 4px; }
+    button:hover { background: #333; }
+    button.primary { background: #1a3a1a; border-color: #2a6a2a; color: #6aff6a; }
+    button.primary:hover { background: #1f4a1f; }
+    .stats { background: #111; border: 1px solid #222; padding: 12px; border-radius: 4px; margin-bottom: 20px; font-size: 0.8rem; color: #888; display: flex; gap: 24px; }
+    .stats span { color: #aaa; }
+    .stats b { color: #fff; }
+    .post-form { background: #111; border: 1px solid #222; padding: 16px; border-radius: 4px; margin-bottom: 20px; }
+    .post-form h3 { font-size: 0.85rem; color: #aaa; margin-bottom: 12px; }
+    .form-row { display: flex; gap: 8px; margin-bottom: 8px; }
+    .form-row input, .form-row select { flex: 1; }
+    textarea { width: 100%; min-height: 80px; resize: vertical; margin-bottom: 8px; }
+    .form-actions { display: flex; justify-content: space-between; align-items: center; }
+    .price-note { font-size: 0.75rem; color: #555; }
+    .notes-list { display: flex; flex-direction: column; gap: 10px; }
+    .note { background: #111; border: 1px solid #222; padding: 14px; border-radius: 4px; }
+    .note.creator { border-color: #2a4a2a; }
+    .note-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .note-author { font-size: 0.75rem; color: #666; }
+    .note-author .addr { color: #888; }
+    .note-meta { display: flex; gap: 8px; align-items: center; }
+    .badge { font-size: 0.7rem; padding: 2px 6px; border-radius: 3px; background: #1a1a1a; border: 1px solid #333; color: #777; }
+    .badge.creator { background: #1a3a1a; border-color: #2a5a2a; color: #6aaa6a; }
+    .badge.progress { border-color: #2a4a6a; color: #6a9aaa; }
+    .badge.suggestion { border-color: #4a3a2a; color: #aa8a6a; }
+    .badge.question { border-color: #4a2a4a; color: #aa6aaa; }
+    .badge.clarification { border-color: #4a4a2a; color: #aaaa6a; }
+    .note-content { font-size: 0.85rem; line-height: 1.5; color: #ccc; white-space: pre-wrap; }
+    .note-time { font-size: 0.7rem; color: #444; margin-top: 8px; }
+    .empty { text-align: center; color: #444; padding: 40px; font-size: 0.85rem; }
+    .error { color: #ff6a6a; font-size: 0.8rem; margin-top: 6px; }
+    .success { color: #6aff6a; font-size: 0.8rem; margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <h1>listening heart</h1>
+  <p class="subtitle">task engagement layer — post notes, earn on your bounties</p>
+
+  <div class="task-input">
+    <input id="taskId" placeholder="task id (0x...)" />
+    <button onclick="loadTask()">load</button>
+  </div>
+
+  <div id="app" style="display:none">
+    <div class="stats">
+      <span><b id="stat-notes">0</b> notes</span>
+      <span><b id="stat-contributors">0</b> contributors</span>
+      <span><b id="stat-earned">0</b> USDC earned by creator</span>
+    </div>
+
+    <div class="post-form">
+      <h3>post a note</h3>
+      <div class="form-row">
+        <input id="walletAddress" placeholder="your wallet address (0x...)" />
+        <select id="noteType">
+          <option value="general">general</option>
+          <option value="progress">progress</option>
+          <option value="clarification">clarification</option>
+          <option value="suggestion">suggestion</option>
+          <option value="question">question</option>
+        </select>
+      </div>
+      <textarea id="noteContent" placeholder="write your note (max 2000 chars)..."></textarea>
+      <div class="form-actions">
+        <span class="price-note" id="price-note">0.001 USDC via x402 (free for task creator)</span>
+        <button class="primary" onclick="postNote()">post note</button>
+      </div>
+      <div id="post-status"></div>
+    </div>
+
+    <div class="notes-list" id="notes-list">
+      <div class="empty">no notes yet — be the first</div>
+    </div>
+  </div>
+
+  <script>
+    const API = window.location.origin;
+    let currentTaskId = null;
+
+    // Load task from URL param on page load
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('task')) {
+      document.getElementById('taskId').value = urlParams.get('task');
+      loadTask();
+    }
+
+    async function loadTask() {
+      const taskId = document.getElementById('taskId').value.trim();
+      if (!taskId) return;
+      currentTaskId = taskId;
+      window.history.pushState({}, '', `?task=${taskId}`);
+      document.getElementById('app').style.display = 'block';
+      await refreshNotes();
+    }
+
+    async function refreshNotes() {
+      if (!currentTaskId) return;
+      const [notesRes, statsRes] = await Promise.all([
+        fetch(`${API}/tasks/${currentTaskId}/notes`),
+        fetch(`${API}/tasks/${currentTaskId}/notes/stats`)
+      ]);
+      const notesData = await notesRes.json();
+      const statsData = await statsRes.json();
+
+      document.getElementById('stat-notes').textContent = statsData.totalNotes;
+      document.getElementById('stat-contributors').textContent = statsData.uniqueContributors;
+      document.getElementById('stat-earned').textContent = (statsData.totalPaymentsToCreator / 1e6).toFixed(4);
+
+      const list = document.getElementById('notes-list');
+      if (!notesData.notes || notesData.notes.length === 0) {
+        list.innerHTML = '<div class="empty">no notes yet — be the first</div>';
+        return;
+      }
+      list.innerHTML = notesData.notes.map(renderNote).join('');
+    }
+
+    function renderNote(note) {
+      const addr = note.author.slice(0, 6) + '...' + note.author.slice(-4);
+      const time = new Date(note.timestamp).toLocaleString();
+      const isCreator = note.isCreator;
+      return `
+        <div class="note ${isCreator ? 'creator' : ''}">
+          <div class="note-header">
+            <span class="note-author"><span class="addr">${addr}</span></span>
+            <div class="note-meta">
+              ${isCreator ? '<span class="badge creator">creator</span>' : ''}
+              <span class="badge ${note.noteType}">${note.noteType}</span>
+            </div>
+          </div>
+          <div class="note-content">${escapeHtml(note.content)}</div>
+          <div class="note-time">${time}</div>
+        </div>`;
+    }
+
+    async function postNote() {
+      if (!currentTaskId) return;
+      const wallet = document.getElementById('walletAddress').value.trim();
+      const content = document.getElementById('noteContent').value.trim();
+      const noteType = document.getElementById('noteType').value;
+      const status = document.getElementById('post-status');
+
+      if (!wallet) return setStatus('wallet address required', 'error');
+      if (!content) return setStatus('content required', 'error');
+
+      setStatus('posting...', '');
+      try {
+        const res = await fetch(`${API}/tasks/${currentTaskId}/notes`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-wallet-address': wallet },
+          body: JSON.stringify({ content, noteType })
+        });
+
+        if (res.status === 402) {
+          setStatus('payment required via x402 — use an x402-enabled client', 'error');
+          return;
+        }
+        if (!res.ok) {
+          const err = await res.json();
+          return setStatus(err.error || 'failed', 'error');
+        }
+
+        document.getElementById('noteContent').value = '';
+        setStatus('note posted', 'success');
+        await refreshNotes();
+      } catch (e) {
+        setStatus('network error', 'error');
+      }
+    }
+
+    function setStatus(msg, type) {
+      const el = document.getElementById('post-status');
+      el.className = type;
+      el.textContent = msg;
+    }
+
+    function escapeHtml(s) {
+      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    // Auto-refresh every 30s
+    setInterval(refreshNotes, 30000);
+  </script>
+</body>
+</html>
