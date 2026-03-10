@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: listening-heart
+    runtime: node
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: NOTE_PRICE
+        value: 1000
+      - key: FACILITATOR_URL
+        value: https://x402.org/facilitator
+      - key: FALLBACK_WALLET
+        sync: false
