@@ -18,7 +18,7 @@ const FACILITATOR = process.env.FACILITATOR_URL || 'https://x402.org/facilitator
 const NOTE_TYPES = ['general', 'progress', 'clarification', 'suggestion', 'question'];
 
 // POST /tasks/:taskId/notes
-app.post('/tasks/:taskId/notes', async (req, res, next) => {
+app.post('/tasks/:taskId/notes', async (req, res) => {
   const { taskId } = req.params;
   const authorAddress = req.headers['x-wallet-address'];
   const { content, noteType = 'general' } = req.body;
@@ -33,9 +33,12 @@ app.post('/tasks/:taskId/notes', async (req, res, next) => {
   // Task creator posts free
   if (taskCreator && authorAddress.toLowerCase() === taskCreator.toLowerCase()) {
     const noteId = uuidv4();
-    db.prepare(`INSERT INTO notes (note_id, task_id, author_address, content, note_type, payment_amount) VALUES (?, ?, ?, ?, ?, 0)`)
-      .run(noteId, taskId, authorAddress.toLowerCase(), content.trim(), noteType);
-    return res.status(201).json(buildNote(db.prepare('SELECT * FROM notes WHERE note_id = ?').get(noteId)));
+    await db.query(
+      `INSERT INTO notes (note_id, task_id, author_address, content, note_type, payment_amount) VALUES ($1, $2, $3, $4, $5, 0)`,
+      [noteId, taskId, authorAddress.toLowerCase(), content.trim(), noteType]
+    );
+    const { rows } = await db.query('SELECT * FROM notes WHERE note_id = $1', [noteId]);
+    return res.status(201).json(buildNote(rows[0]));
   }
 
   // Everyone else pays via x402
@@ -52,39 +55,50 @@ app.post('/tasks/:taskId/notes', async (req, res, next) => {
 
   middleware(req, res, async () => {
     const noteId = uuidv4();
-    db.prepare(`INSERT INTO notes (note_id, task_id, author_address, content, note_type, payment_amount) VALUES (?, ?, ?, ?, ?, ?)`)
-      .run(noteId, taskId, authorAddress.toLowerCase(), content.trim(), noteType, parseInt(NOTE_PRICE));
-    return res.status(201).json(buildNote(db.prepare('SELECT * FROM notes WHERE note_id = ?').get(noteId)));
+    await db.query(
+      `INSERT INTO notes (note_id, task_id, author_address, content, note_type, payment_amount) VALUES ($1, $2, $3, $4, $5, $6)`,
+      [noteId, taskId, authorAddress.toLowerCase(), content.trim(), noteType, parseInt(NOTE_PRICE)]
+    );
+    const { rows } = await db.query('SELECT * FROM notes WHERE note_id = $1', [noteId]);
+    return res.status(201).json(buildNote(rows[0]));
   });
 });
 
 // GET /tasks/:taskId/notes
-app.get('/tasks/:taskId/notes', (req, res) => {
+app.get('/tasks/:taskId/notes', async (req, res) => {
   const { taskId } = req.params;
   const { noteType, limit = 50, offset = 0 } = req.query;
 
-  let query = 'SELECT * FROM notes WHERE task_id = ?';
+  let query = 'SELECT * FROM notes WHERE task_id = $1';
   const params = [taskId];
+  let idx = 2;
 
-  if (noteType) { query += ' AND note_type = ?'; params.push(noteType); }
-  query += ' ORDER BY created_at ASC LIMIT ? OFFSET ?';
+  if (noteType) { query += ` AND note_type = $${idx}`; params.push(noteType); idx++; }
+  query += ` ORDER BY created_at ASC LIMIT $${idx} OFFSET $${idx + 1}`;
   params.push(parseInt(limit), parseInt(offset));
 
-  const notes = db.prepare(query).all(...params).map(buildNote);
-  const stats = db.prepare('SELECT COUNT(*) as total, COALESCE(SUM(payment_amount),0) as earned FROM notes WHERE task_id = ?').get(taskId);
+  const { rows: notes } = await db.query(query, params);
+  const { rows: [stats] } = await db.query(
+    'SELECT COUNT(*) as total, COALESCE(SUM(payment_amount),0) as earned FROM notes WHERE task_id = $1',
+    [taskId]
+  );
 
-  res.json({ taskId, notes, totalNotes: stats.total, totalEngagementEarned: stats.earned });
+  res.json({ taskId, notes: notes.map(buildNote), totalNotes: parseInt(stats.total), totalEngagementEarned: parseInt(stats.earned) });
 });
 
 // GET /tasks/:taskId/notes/stats
-app.get('/tasks/:taskId/notes/stats', (req, res) => {
+app.get('/tasks/:taskId/notes/stats', async (req, res) => {
   const { taskId } = req.params;
-  const stats = db.prepare('SELECT COUNT(*) as total, COALESCE(SUM(payment_amount),0) as earned, COUNT(DISTINCT author_address) as unique_contributors FROM notes WHERE task_id = ?').get(taskId);
+  const { rows: [stats] } = await db.query(
+    'SELECT COUNT(*) as total, COALESCE(SUM(payment_amount),0) as earned, COUNT(DISTINCT author_address) as unique_contributors FROM notes WHERE task_id = $1',
+    [taskId]
+  );
   const byType = {};
-  NOTE_TYPES.forEach(t => {
-    byType[t] = db.prepare('SELECT COUNT(*) as c FROM notes WHERE task_id = ? AND note_type = ?').get(taskId, t).c;
-  });
-  res.json({ taskId, totalNotes: stats.total, uniqueContributors: stats.unique_contributors, totalPaymentsToCreator: stats.earned, notesByType: byType });
+  await Promise.all(NOTE_TYPES.map(async t => {
+    const { rows: [r] } = await db.query('SELECT COUNT(*) as c FROM notes WHERE task_id = $1 AND note_type = $2', [taskId, t]);
+    byType[t] = parseInt(r.c);
+  }));
+  res.json({ taskId, totalNotes: parseInt(stats.total), uniqueContributors: parseInt(stats.unique_contributors), totalPaymentsToCreator: parseInt(stats.earned), notesByType: byType });
 });
 
 function buildNote(row) {
@@ -95,8 +109,8 @@ function buildNote(row) {
     content: row.content,
     noteType: row.note_type,
     timestamp: row.created_at,
-    paymentAmount: row.payment_amount,
-    isCreator: row.payment_amount === 0
+    paymentAmount: parseInt(row.payment_amount),
+    isCreator: parseInt(row.payment_amount) === 0
   };
 }
 

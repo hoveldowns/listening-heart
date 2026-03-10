@@ -12,10 +12,10 @@
   "type": "commonjs",
   "dependencies": {
     "@x402/express": "^2.6.0",
-    "better-sqlite3": "^12.6.2",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
+    "pg": "^8.20.0",
     "uuid": "^13.0.0"
   }
 }
