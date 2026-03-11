@@ -168,7 +168,7 @@
         });
 
         if (res.status === 402) {
-          setStatus('payment required via x402 — use an x402-enabled client', 'error');
+          await handleX402Payment(res, wallet || null, content, noteType);
           return;
         }
         if (!res.ok) {
@@ -181,6 +181,82 @@
         await refreshNotes();
       } catch (e) {
         setStatus('network error', 'error');
+      }
+    }
+
+    async function handleX402Payment(res, _wallet, content, noteType) {
+      if (!window.ethereum) return setStatus('payment required — install MetaMask to pay', 'error');
+
+      const paymentHeader = res.headers.get('payment-required');
+      if (!paymentHeader) return setStatus('payment required — no requirements returned', 'error');
+
+      let req;
+      try { req = JSON.parse(atob(paymentHeader)).accepts[0]; }
+      catch { return setStatus('could not parse payment requirements', 'error'); }
+
+      try {
+        setStatus('connecting wallet...', '');
+        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+        const from = accounts[0];
+        document.getElementById('walletAddress').value = from;
+
+        setStatus('switching to Base Sepolia...', '');
+        try {
+          await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x14a34' }] });
+        } catch (e) {
+          if (e.code === 4902) {
+            await window.ethereum.request({ method: 'wallet_addEthereumChain', params: [{ chainId: '0x14a34', chainName: 'Base Sepolia', nativeCurrency: { name: 'Ethereum', symbol: 'ETH', decimals: 18 }, rpcUrls: ['https://sepolia.base.org'], blockExplorerUrls: ['https://sepolia.basescan.org'] }] });
+          } else throw e;
+        }
+
+        const now = Math.floor(Date.now() / 1000);
+        const nonceBytes = crypto.getRandomValues(new Uint8Array(32));
+        const nonce = '0x' + Array.from(nonceBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+
+        const authorization = {
+          from,
+          to: req.payTo,
+          value: req.amount,
+          validAfter: String(now - 600),
+          validBefore: String(now + req.maxTimeoutSeconds),
+          nonce
+        };
+
+        setStatus('sign payment in MetaMask...', '');
+        const signature = await window.ethereum.request({
+          method: 'eth_signTypedData_v4',
+          params: [from, JSON.stringify({
+            domain: { name: req.extra.name, version: req.extra.version, chainId: 84532, verifyingContract: req.asset },
+            types: { TransferWithAuthorization: [
+              { name: 'from', type: 'address' }, { name: 'to', type: 'address' },
+              { name: 'value', type: 'uint256' }, { name: 'validAfter', type: 'uint256' },
+              { name: 'validBefore', type: 'uint256' }, { name: 'nonce', type: 'bytes32' }
+            ]},
+            primaryType: 'TransferWithAuthorization',
+            message: { from, to: req.payTo, value: req.amount, validAfter: authorization.validAfter, validBefore: authorization.validBefore, nonce }
+          })]
+        });
+
+        const payment = btoa(JSON.stringify({ x402Version: 2, payload: { authorization, signature } }));
+
+        setStatus('submitting...', '');
+        const retryRes = await fetch(`${API}/tasks/${currentTaskId}/notes`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-wallet-address': from, 'X-PAYMENT': payment },
+          body: JSON.stringify({ content, noteType })
+        });
+
+        if (!retryRes.ok) {
+          const err = await retryRes.json().catch(() => ({}));
+          return setStatus(err.error || `error ${retryRes.status}`, 'error');
+        }
+
+        document.getElementById('noteContent').value = '';
+        setStatus('note posted', 'success');
+        await refreshNotes();
+      } catch (e) {
+        if (e.code === 4001) return setStatus('payment cancelled', 'error');
+        setStatus('payment failed: ' + (e.message || e), 'error');
       }
     }
 
