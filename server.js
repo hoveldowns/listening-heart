@@ -67,6 +67,13 @@ app.post('/tasks/:taskId/notes', async (req, res) => {
     resourceServer
   );
 
+  // Debug: log incoming payment header so we can see what's being verified
+  const incomingPayment = req.headers['payment-signature'];
+  if (incomingPayment) {
+    try { console.log('[x402 incoming]', JSON.stringify(JSON.parse(Buffer.from(incomingPayment, 'base64').toString()))); }
+    catch (e) { console.log('[x402 incoming] decode failed:', e.message); }
+  }
+
   middleware(req, res, async () => {
     const noteId = uuidv4();
     await db.query(
