@@ -109,10 +109,12 @@
 
     async function refreshNotes() {
       if (!currentTaskId) return;
+      try {
       const [notesRes, statsRes] = await Promise.all([
         fetch(`${API}/tasks/${currentTaskId}/notes`),
         fetch(`${API}/tasks/${currentTaskId}/notes/stats`)
       ]);
+      if (!notesRes.ok || !statsRes.ok) return;
       const notesData = await notesRes.json();
       const statsData = await statsRes.json();
 
@@ -126,6 +128,7 @@
         return;
       }
       list.innerHTML = notesData.notes.map(renderNote).join('');
+      } catch (e) { /* server down, skip refresh */ }
     }
 
     function renderNote(note) {

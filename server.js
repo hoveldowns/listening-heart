@@ -63,8 +63,7 @@ app.post('/tasks/:taskId/notes', async (req, res) => {
         description: `Note on task ${taskId.slice(0, 10)}...`,
       },
     },
-    resourceServer,
-    undefined, undefined, false  // skip re-init, already done at startup
+    resourceServer
   );
 
   middleware(req, res, async () => {
