@@ -190,8 +190,8 @@
       const paymentHeader = res.headers.get('payment-required');
       if (!paymentHeader) return setStatus('payment required — no requirements returned', 'error');
 
-      let req;
-      try { req = JSON.parse(atob(paymentHeader)).accepts[0]; }
+      let req, paymentRequired;
+      try { paymentRequired = JSON.parse(atob(paymentHeader)); req = paymentRequired.accepts[0]; }
       catch { return setStatus('could not parse payment requirements', 'error'); }
 
       try {
@@ -237,7 +237,7 @@
           })]
         });
 
-        const payment = btoa(JSON.stringify({ x402Version: 2, payload: { authorization, signature } }));
+        const payment = btoa(JSON.stringify({ x402Version: 2, payload: { authorization, signature }, accepted: req, resource: paymentRequired.resource }));
 
         setStatus('submitting...', '');
         const retryRes = await fetch(`${API}/tasks/${currentTaskId}/notes`, {
