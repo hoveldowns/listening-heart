@@ -20,8 +20,6 @@ const facilitatorClient = new HTTPFacilitatorClient({ url: FACILITATOR });
 const resourceServer = new x402ResourceServer(facilitatorClient)
   .register('eip155:8453', new ExactEvmScheme());
 
-// Initialize once at startup so per-request middleware doesn't need to re-fetch
-resourceServer.initialize().catch(err => console.error('x402 init failed:', err));
 
 const NOTE_TYPES = ['general', 'progress', 'clarification', 'suggestion', 'question'];
 
@@ -131,4 +129,7 @@ function buildNote(row) {
 }
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`listening-heart running on port ${PORT}`));
+(async () => {
+  await resourceServer.initialize();
+  app.listen(PORT, () => console.log(`listening-heart running on port ${PORT}`));
+})().catch(err => { console.error('Startup failed:', err); process.exit(1); });
