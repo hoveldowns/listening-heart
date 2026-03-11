@@ -10,8 +10,6 @@ services:
     buildCommand: yarn install
     startCommand: yarn start
     envVars:
-      - key: PORT
-        value: 3000
       - key: NOTE_PRICE
         value: 1000
       - key: FACILITATOR_URL
