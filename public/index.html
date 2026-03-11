@@ -242,7 +242,7 @@
         setStatus('submitting...', '');
         const retryRes = await fetch(`${API}/tasks/${currentTaskId}/notes`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-wallet-address': from, 'X-PAYMENT': payment },
+          headers: { 'Content-Type': 'application/json', 'x-wallet-address': from, 'payment-signature': payment },
           body: JSON.stringify({ content, noteType })
         });
 
