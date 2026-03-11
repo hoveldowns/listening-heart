@@ -85,6 +85,22 @@ app.post('/tasks/:taskId/notes', async (req, res) => {
   });
 });
 
+// POST /debug/verify — proxies payment payload to facilitator verify, returns raw result
+app.post('/debug/verify', async (req, res) => {
+  const { paymentPayload, paymentRequirements } = req.body;
+  try {
+    const r = await fetch(`${FACILITATOR}/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ x402Version: paymentPayload.x402Version, paymentPayload, paymentRequirements })
+    });
+    const data = await r.json();
+    res.json({ status: r.status, data });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /tasks/:taskId/notes
 app.get('/tasks/:taskId/notes', async (req, res) => {
   const { taskId } = req.params;
