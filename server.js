@@ -2,7 +2,9 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
-const { paymentMiddleware } = require('@x402/express');
+const { paymentMiddleware, x402ResourceServer } = require('@x402/express');
+const { HTTPFacilitatorClient } = require('@x402/core/server');
+const { ExactEvmScheme } = require('@x402/evm/exact/server');
 const db = require('./db');
 const { getTaskCreator } = require('./taskmarket');
 
@@ -11,9 +13,12 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-const USDC_BASE = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913';
 const NOTE_PRICE = process.env.NOTE_PRICE || '1000'; // 0.001 USDC
 const FACILITATOR = process.env.FACILITATOR_URL || 'https://x402.org/facilitator';
+
+const facilitatorClient = new HTTPFacilitatorClient({ url: FACILITATOR });
+const resourceServer = new x402ResourceServer(facilitatorClient)
+  .register('eip155:8453', new ExactEvmScheme());
 
 const NOTE_TYPES = ['general', 'progress', 'clarification', 'suggestion', 'question'];
 
@@ -45,13 +50,21 @@ app.post('/tasks/:taskId/notes', async (req, res) => {
   const payTo = taskCreator || process.env.FALLBACK_WALLET;
   if (!payTo) return res.status(500).json({ error: 'Could not determine payment recipient' });
 
-  const middleware = paymentMiddleware(payTo, {
-    ['/tasks/:taskId/notes']: {
-      price: `$${(parseInt(NOTE_PRICE) / 1e6).toFixed(6)}`,
-      network: 'base',
-      config: { description: `Note on task ${taskId.slice(0, 10)}...` }
-    }
-  }, { url: FACILITATOR });
+  const middleware = paymentMiddleware(
+    {
+      [`POST /tasks/${taskId}/notes`]: {
+        accepts: {
+          scheme: 'exact',
+          price: `$${(parseInt(NOTE_PRICE) / 1e6).toFixed(6)}`,
+          network: 'eip155:8453',
+          payTo,
+        },
+        description: `Note on task ${taskId.slice(0, 10)}...`,
+      },
+    },
+    resourceServer,
+    undefined, undefined, false
+  );
 
   middleware(req, res, async () => {
     const noteId = uuidv4();
