@@ -20,6 +20,9 @@ const facilitatorClient = new HTTPFacilitatorClient({ url: FACILITATOR });
 const resourceServer = new x402ResourceServer(facilitatorClient)
   .register('eip155:8453', new ExactEvmScheme());
 
+// Initialize once at startup so per-request middleware doesn't need to re-fetch
+resourceServer.initialize().catch(err => console.error('x402 init failed:', err));
+
 const NOTE_TYPES = ['general', 'progress', 'clarification', 'suggestion', 'question'];
 
 // POST /tasks/:taskId/notes
@@ -63,7 +66,7 @@ app.post('/tasks/:taskId/notes', async (req, res) => {
       },
     },
     resourceServer,
-    undefined, undefined, false
+    undefined, undefined, false  // skip re-init, already done at startup
   );
 
   middleware(req, res, async () => {
