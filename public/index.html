@@ -209,13 +209,19 @@
           } else throw e;
         }
 
+        // Viem lowercases all address fields before calling eth_signTypedData_v4
+        // MetaMask encodes checksummed vs lowercase addresses differently
+        const payTo = req.payTo.toLowerCase();
+        const asset = req.asset.toLowerCase();
+        const fromNorm = from.toLowerCase();
+
         const now = Math.floor(Date.now() / 1000);
         const nonceBytes = crypto.getRandomValues(new Uint8Array(32));
         const nonce = '0x' + Array.from(nonceBytes).map(b => b.toString(16).padStart(2, '0')).join('');
 
         const authorization = {
-          from,
-          to: req.payTo,
+          from: fromNorm,
+          to: payTo,
           value: req.amount,
           validAfter: String(now - 600),
           validBefore: String(now + req.maxTimeoutSeconds),
@@ -226,7 +232,7 @@
         const signature = await window.ethereum.request({
           method: 'eth_signTypedData_v4',
           params: [from, JSON.stringify({
-            domain: { name: req.extra.name, version: req.extra.version, chainId: 84532, verifyingContract: req.asset },
+            domain: { name: req.extra.name, version: req.extra.version, chainId: 84532, verifyingContract: asset },
             types: {
               EIP712Domain: [
                 { name: 'name', type: 'string' },
@@ -241,7 +247,7 @@
               ]
             },
             primaryType: 'TransferWithAuthorization',
-            message: { from, to: req.payTo, value: parseInt(req.amount), validAfter: now - 600, validBefore: now + req.maxTimeoutSeconds, nonce }
+            message: { from: fromNorm, to: payTo, value: parseInt(req.amount), validAfter: now - 600, validBefore: now + req.maxTimeoutSeconds, nonce }
           })]
         });
 
