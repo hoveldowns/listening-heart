@@ -76,7 +76,7 @@
       </div>
       <textarea id="noteContent" placeholder="write your note (max 2000 chars)..."></textarea>
       <div class="form-actions">
-        <span class="price-note" id="price-note">0.001 USDC via x402 (free for task creator)</span>
+        <span class="price-note" id="price-note">free (wallet address required)</span>
         <button class="primary" onclick="postNote()">post note</button>
       </div>
       <div id="post-status"></div>
@@ -169,7 +169,7 @@
 
         if (res.status === 402) {
           await handleX402Payment(res, wallet, content, noteType);
-          return;
+          return; // fallback if payment ever becomes required again
         }
         if (!res.ok) {
           const err = await res.json();
