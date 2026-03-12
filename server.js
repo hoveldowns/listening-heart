@@ -48,51 +48,41 @@ app.post('/tasks/:taskId/notes', async (req, res) => {
     return res.status(201).json(buildNote(rows[0]));
   }
 
-  // x402 payment optional — accept and record if provided, but don't require
+  // Everyone else pays via x402
   const payTo = taskCreator || process.env.FALLBACK_WALLET;
-  const incomingPayment = req.headers['payment-signature'];
-  let paymentAmount = 0;
+  if (!payTo) return res.status(500).json({ error: 'Could not determine payment recipient' });
 
-  if (incomingPayment && payTo) {
+  const middleware = paymentMiddleware(
+    {
+      [`POST /tasks/${taskId}/notes`]: {
+        accepts: {
+          scheme: 'exact',
+          price: `$${(parseInt(NOTE_PRICE) / 1e6).toFixed(6)}`,
+          network: 'eip155:84532',
+          payTo,
+        },
+        description: `Note on task ${taskId.slice(0, 10)}...`,
+      },
+    },
+    resourceServer
+  );
+
+  // Debug: log incoming payment header so we can see what's being verified
+  const incomingPayment = req.headers['payment-signature'];
+  if (incomingPayment) {
     try { console.log('[x402 incoming]', JSON.stringify(JSON.parse(Buffer.from(incomingPayment, 'base64').toString()))); }
     catch (e) { console.log('[x402 incoming] decode failed:', e.message); }
-
-    const middleware = paymentMiddleware(
-      {
-        [`POST /tasks/${taskId}/notes`]: {
-          accepts: {
-            scheme: 'exact',
-            price: `$${(parseInt(NOTE_PRICE) / 1e6).toFixed(6)}`,
-            network: 'eip155:84532',
-            payTo,
-          },
-          description: `Note on task ${taskId.slice(0, 10)}...`,
-        },
-      },
-      resourceServer
-    );
-
-    // Verify the payment — if invalid, middleware returns 402; if valid, proceeds
-    return middleware(req, res, async () => {
-      paymentAmount = parseInt(NOTE_PRICE);
-      const noteId = uuidv4();
-      await db.query(
-        `INSERT INTO notes (note_id, task_id, author_address, content, note_type, payment_amount) VALUES ($1, $2, $3, $4, $5, $6)`,
-        [noteId, taskId, authorAddress.toLowerCase(), content.trim(), noteType, paymentAmount]
-      );
-      const { rows } = await db.query('SELECT * FROM notes WHERE note_id = $1', [noteId]);
-      return res.status(201).json(buildNote(rows[0]));
-    });
   }
 
-  // No payment provided — post free
-  const noteId = uuidv4();
-  await db.query(
-    `INSERT INTO notes (note_id, task_id, author_address, content, note_type, payment_amount) VALUES ($1, $2, $3, $4, $5, 0)`,
-    [noteId, taskId, authorAddress.toLowerCase(), content.trim(), noteType]
-  );
-  const { rows } = await db.query('SELECT * FROM notes WHERE note_id = $1', [noteId]);
-  return res.status(201).json(buildNote(rows[0]));
+  middleware(req, res, async () => {
+    const noteId = uuidv4();
+    await db.query(
+      `INSERT INTO notes (note_id, task_id, author_address, content, note_type, payment_amount) VALUES ($1, $2, $3, $4, $5, $6)`,
+      [noteId, taskId, authorAddress.toLowerCase(), content.trim(), noteType, parseInt(NOTE_PRICE)]
+    );
+    const { rows } = await db.query('SELECT * FROM notes WHERE note_id = $1', [noteId]);
+    return res.status(201).json(buildNote(rows[0]));
+  });
 });
 
 // POST /debug/verify — proxies payment payload to facilitator verify, returns raw result
