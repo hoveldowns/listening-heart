@@ -168,7 +168,7 @@
         });
 
         if (res.status === 402) {
-          await handleX402Payment(res, wallet || null, content, noteType);
+          await handleX402Payment(res, wallet, content, noteType);
           return;
         }
         if (!res.ok) {
@@ -233,7 +233,7 @@
               { name: 'validBefore', type: 'uint256' }, { name: 'nonce', type: 'bytes32' }
             ]},
             primaryType: 'TransferWithAuthorization',
-            message: { from, to: req.payTo, value: req.amount, validAfter: authorization.validAfter, validBefore: authorization.validBefore, nonce }
+            message: { from, to: req.payTo, value: parseInt(req.amount), validAfter: now - 600, validBefore: now + req.maxTimeoutSeconds, nonce }
           })]
         });
 
