@@ -227,11 +227,19 @@
           method: 'eth_signTypedData_v4',
           params: [from, JSON.stringify({
             domain: { name: req.extra.name, version: req.extra.version, chainId: 84532, verifyingContract: req.asset },
-            types: { TransferWithAuthorization: [
-              { name: 'from', type: 'address' }, { name: 'to', type: 'address' },
-              { name: 'value', type: 'uint256' }, { name: 'validAfter', type: 'uint256' },
-              { name: 'validBefore', type: 'uint256' }, { name: 'nonce', type: 'bytes32' }
-            ]},
+            types: {
+              EIP712Domain: [
+                { name: 'name', type: 'string' },
+                { name: 'version', type: 'string' },
+                { name: 'chainId', type: 'uint256' },
+                { name: 'verifyingContract', type: 'address' }
+              ],
+              TransferWithAuthorization: [
+                { name: 'from', type: 'address' }, { name: 'to', type: 'address' },
+                { name: 'value', type: 'uint256' }, { name: 'validAfter', type: 'uint256' },
+                { name: 'validBefore', type: 'uint256' }, { name: 'nonce', type: 'bytes32' }
+              ]
+            },
             primaryType: 'TransferWithAuthorization',
             message: { from, to: req.payTo, value: parseInt(req.amount), validAfter: now - 600, validBefore: now + req.maxTimeoutSeconds, nonce }
           })]
