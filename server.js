@@ -37,18 +37,7 @@ app.post('/tasks/:taskId/notes', async (req, res) => {
 
   const taskCreator = await getTaskCreator(taskId);
 
-  // Task creator posts free
-  if (taskCreator && authorAddress.toLowerCase() === taskCreator.toLowerCase()) {
-    const noteId = uuidv4();
-    await db.query(
-      `INSERT INTO notes (note_id, task_id, author_address, content, note_type, payment_amount) VALUES ($1, $2, $3, $4, $5, 0)`,
-      [noteId, taskId, authorAddress.toLowerCase(), content.trim(), noteType]
-    );
-    const { rows } = await db.query('SELECT * FROM notes WHERE note_id = $1', [noteId]);
-    return res.status(201).json(buildNote(rows[0]));
-  }
-
-  // Everyone else pays via x402
+  // Everyone pays via x402 — no unauthenticated bypass
   const payTo = taskCreator || process.env.FALLBACK_WALLET;
   if (!payTo) return res.status(500).json({ error: 'Could not determine payment recipient' });
 
