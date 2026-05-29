@@ -142,6 +142,14 @@ function buildNote(row) {
 
 const PORT = process.env.PORT || 3000;
 (async () => {
-  await resourceServer.initialize();
+  try {
+    await Promise.race([
+      resourceServer.initialize(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('x402 initialize timeout')), 10000))
+    ]);
+    console.log('x402 resource server initialized');
+  } catch (err) {
+    console.warn('x402 initialize warning (continuing):', err.message);
+  }
   app.listen(PORT, () => console.log(`listening-heart running on port ${PORT}`));
 })().catch(err => { console.error('Startup failed:', err); process.exit(1); });
