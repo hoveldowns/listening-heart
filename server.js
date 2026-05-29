@@ -19,7 +19,7 @@ const FACILITATOR = process.env.FACILITATOR_URL || 'https://x402.org/facilitator
 
 const facilitatorClient = new HTTPFacilitatorClient({ url: FACILITATOR });
 const resourceServer = new x402ResourceServer(facilitatorClient)
-  .register('eip155:84532', new ExactEvmScheme());
+  .register('eip155:8453', new ExactEvmScheme());
 
 
 const NOTE_TYPES = ['general', 'progress', 'clarification', 'suggestion', 'question'];
@@ -47,7 +47,7 @@ app.post('/tasks/:taskId/notes', async (req, res) => {
         accepts: {
           scheme: 'exact',
           price: `$${(parseInt(NOTE_PRICE) / 1e6).toFixed(6)}`,
-          network: 'eip155:84532',
+          network: 'eip155:8453',
           payTo,
         },
         description: `Note on task ${taskId.slice(0, 10)}...`,
