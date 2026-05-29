@@ -41,6 +41,8 @@ app.post('/tasks/:taskId/notes', async (req, res) => {
   const payTo = taskCreator || process.env.FALLBACK_WALLET;
   if (!payTo) return res.status(500).json({ error: 'Could not determine payment recipient' });
 
+  console.log(`[POST] taskId=${taskId} payTo=${payTo} network=eip155:8453`);
+
   const middleware = paymentMiddleware(
     {
       [`POST /tasks/${taskId}/notes`]: {
