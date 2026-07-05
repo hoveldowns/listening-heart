@@ -19,7 +19,7 @@ const FACILITATOR = process.env.FACILITATOR_URL || 'https://x402.org/facilitator
 
 const facilitatorClient = new HTTPFacilitatorClient({ url: FACILITATOR });
 const resourceServer = new x402ResourceServer(facilitatorClient)
-  .register('eip155:84532', new ExactEvmScheme());
+  .register('eip155:8453', new ExactEvmScheme());
 
 
 const NOTE_TYPES = ['general', 'progress', 'clarification', 'suggestion', 'question'];
