@@ -18,8 +18,33 @@ app.use(express.static('public'));
 const NOTE_PRICE = process.env.NOTE_PRICE || '1000'; // 0.001 USDC
 const NETWORK = process.env.NETWORK || 'eip155:8453'; // Base mainnet (was eip155:84532 Sepolia)
 const FACILITATOR = process.env.FACILITATOR_URL || 'https://facilitator.daydreams.systems';
+const SIGNER_KEY = process.env.FACILITATOR_SIGNER_KEY; // if set → self-facilitate (no hosted token/KYC)
+const BASE_RPC = process.env.BASE_RPC_URL || 'https://mainnet.base.org';
 
-const facilitatorClient = new HTTPFacilitatorClient({ url: FACILITATOR });
+// Facilitator: either self-host settlement (we verify + submit EIP-3009 transferWithAuthorization
+// on-chain ourselves, paying gas from SIGNER_KEY's wallet — no hosted token/KYC), or use a hosted
+// facilitator over HTTP. Self mode kicks in when FACILITATOR_SIGNER_KEY is present.
+let facilitatorClient;
+if (SIGNER_KEY) {
+  const { createWalletClient, http, publicActions } = require('viem');
+  const { privateKeyToAccount } = require('viem/accounts');
+  const { base, baseSepolia } = require('viem/chains');
+  const { x402Facilitator } = require('@x402/core/facilitator');
+  const { registerExactEvmScheme } = require('@x402/evm/exact/facilitator');
+  const { toFacilitatorEvmSigner } = require('@x402/evm');
+
+  const chain = NETWORK === 'eip155:84532' ? baseSepolia : base;
+  const account = privateKeyToAccount(SIGNER_KEY);
+  const client = createWalletClient({ account, chain, transport: http(BASE_RPC) }).extend(publicActions);
+  const selfFac = new x402Facilitator();
+  registerExactEvmScheme(selfFac, { signer: toFacilitatorEvmSigner(client), networks: NETWORK });
+  facilitatorClient = selfFac;
+  console.log(`[facilitator] SELF-FACILITATING on ${NETWORK} — gas wallet ${account.address}, RPC ${BASE_RPC}`);
+} else {
+  facilitatorClient = new HTTPFacilitatorClient({ url: FACILITATOR });
+  console.log(`[facilitator] hosted: ${FACILITATOR}`);
+}
+
 const resourceServer = new x402ResourceServer(facilitatorClient)
   .register(NETWORK, new ExactEvmScheme());
 
