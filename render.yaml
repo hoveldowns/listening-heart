@@ -12,8 +12,12 @@ services:
     envVars:
       - key: NOTE_PRICE
         value: 1000
+      - key: NETWORK
+        value: eip155:8453
       - key: FACILITATOR_URL
-        value: https://x402.org/facilitator
+        value: https://facilitator.daydreams.systems
+      - key: TASKMARKET_API
+        value: https://api.taskmarket.dev
       - key: FALLBACK_WALLET
         sync: false
       - key: DATABASE_URL

@@ -5,6 +5,7 @@ const { v4: uuidv4 } = require('uuid');
 const { paymentMiddleware, x402ResourceServer } = require('@x402/express');
 const { HTTPFacilitatorClient } = require('@x402/core/server');
 const { ExactEvmScheme } = require('@x402/evm/exact/server');
+const { ethers } = require('ethers');
 const db = require('./db');
 const { getTaskCreator } = require('./taskmarket');
 
@@ -15,11 +16,12 @@ app.use(express.json());
 app.use(express.static('public'));
 
 const NOTE_PRICE = process.env.NOTE_PRICE || '1000'; // 0.001 USDC
-const FACILITATOR = process.env.FACILITATOR_URL || 'https://x402.org/facilitator';
+const NETWORK = process.env.NETWORK || 'eip155:8453'; // Base mainnet (was eip155:84532 Sepolia)
+const FACILITATOR = process.env.FACILITATOR_URL || 'https://facilitator.daydreams.systems';
 
 const facilitatorClient = new HTTPFacilitatorClient({ url: FACILITATOR });
 const resourceServer = new x402ResourceServer(facilitatorClient)
-  .register('eip155:84532', new ExactEvmScheme());
+  .register(NETWORK, new ExactEvmScheme());
 
 
 const NOTE_TYPES = ['general', 'progress', 'clarification', 'suggestion', 'question'];
@@ -41,7 +43,7 @@ app.post('/tasks/:taskId/notes', async (req, res) => {
   const payTo = taskCreator || process.env.FALLBACK_WALLET;
   if (!payTo) return res.status(500).json({ error: 'Could not determine payment recipient' });
 
-  console.log(`[POST] taskId=${taskId} payTo=${payTo} network=eip155:8453`);
+  console.log(`[POST] taskId=${taskId} payTo=${payTo} network=${NETWORK}`);
 
   const middleware = paymentMiddleware(
     {
@@ -49,7 +51,7 @@ app.post('/tasks/:taskId/notes', async (req, res) => {
         accepts: {
           scheme: 'exact',
           price: `$${(parseInt(NOTE_PRICE) / 1e6).toFixed(6)}`,
-          network: 'eip155:84532',
+          network: NETWORK,
           payTo,
         },
         description: `Note on task ${taskId.slice(0, 10)}...`,
@@ -141,6 +143,76 @@ function buildNote(row) {
     isCreator: parseInt(row.payment_amount) === 0
   };
 }
+
+// ── Bulletin board (free acknowledgment, wallet-signature only) ──────────────
+
+// POST /bulletin/:taskId/ack
+// Body: { walletAddress, signature, message }
+// The agent signs `message` with personal_sign (eth_sign prefix).
+// Server verifies signature proves wallet ownership — no USDC required.
+// One ack per wallet per task (idempotent — re-ack returns existing record).
+app.post('/bulletin/:taskId/ack', async (req, res) => {
+  const { taskId } = req.params;
+  const { walletAddress, signature, message } = req.body;
+
+  if (!walletAddress) return res.status(400).json({ error: 'walletAddress required' });
+  if (!signature)    return res.status(400).json({ error: 'signature required' });
+  if (!message)      return res.status(400).json({ error: 'message required' });
+
+  // Verify the signature proves ownership of walletAddress
+  let recovered;
+  try {
+    recovered = ethers.verifyMessage(message, signature);
+  } catch (e) {
+    return res.status(400).json({ error: 'invalid signature' });
+  }
+
+  if (recovered.toLowerCase() !== walletAddress.toLowerCase()) {
+    return res.status(401).json({ error: 'signature does not match walletAddress' });
+  }
+
+  const ackId = uuidv4();
+  const addr = walletAddress.toLowerCase();
+
+  try {
+    await db.query(
+      `INSERT INTO bulletin_acks (ack_id, task_id, wallet_address, message, signature)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (task_id, wallet_address) DO NOTHING`,
+      [ackId, taskId, addr, message, signature]
+    );
+  } catch (e) {
+    return res.status(500).json({ error: 'db error' });
+  }
+
+  const { rows } = await db.query(
+    'SELECT * FROM bulletin_acks WHERE task_id = $1 AND wallet_address = $2',
+    [taskId, addr]
+  );
+
+  const row = rows[0];
+  res.status(201).json({
+    ackId: row.ack_id,
+    taskId: row.task_id,
+    walletAddress: row.wallet_address,
+    acknowledgedAt: row.acknowledged_at
+  });
+});
+
+// GET /bulletin/:taskId/acks
+// Returns all acknowledged wallet addresses for a task (for payout enumeration)
+app.get('/bulletin/:taskId/acks', async (req, res) => {
+  const { taskId } = req.params;
+  const { rows } = await db.query(
+    'SELECT ack_id, wallet_address, acknowledged_at FROM bulletin_acks WHERE task_id = $1 ORDER BY acknowledged_at ASC',
+    [taskId]
+  );
+  res.json({
+    taskId,
+    count: rows.length,
+    acks: rows.map(r => ({ ackId: r.ack_id, walletAddress: r.wallet_address, acknowledgedAt: r.acknowledged_at }))
+  });
+});
 
 const PORT = process.env.PORT || 3000;
 (async () => {
